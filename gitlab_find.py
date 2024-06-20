@@ -44,6 +44,9 @@ Explanation:
 - Searching Projects: The script connects to GitLab using the `python-gitlab` library and searches for the specified phrase in the `master` branch of each project.
 - Output: The search results are collected and written to an output CSV file, including the project name, branch name, file name, snippet of the matching content, and the status of the search.
 
+There is a worker thread variable that is currently set to 3, this number could be higher
+    worker thread from line 199: ThreadPoolExecutor(max_workers=3) as executor
+
 Example Output:
 The `gitlab_search_results.csv` file will contain:
 
