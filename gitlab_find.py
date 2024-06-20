@@ -26,8 +26,8 @@ Usage:
 1. Save the script to a file, e.g., `gitlab_find.py`.
 2. Run the script from the command line:
     python3 gitlab_find.py <your_gitlab_private_token> <group_path> <search_phrase>
-    Replace <your_gitlab_private_token> with your actual GitLab private token, 
-    <group_path> with the path of the GitLab group you want to search in, 
+    Replace <your_gitlab_private_token> with your actual GitLab private token,
+    <group_path> with the path of the GitLab group you want to search in,
     and <search_phrase> with the phrase you want to search for.
 
 3. Optional arguments:
@@ -43,9 +43,6 @@ Explanation:
 - Converting JSON to CSV: The project data is converted from JSON to a CSV file for easier manipulation and readability.
 - Searching Projects: The script connects to GitLab using the `python-gitlab` library and searches for the specified phrase in the `master` branch of each project.
 - Output: The search results are collected and written to an output CSV file, including the project name, branch name, file name, snippet of the matching content, and the status of the search.
-
-There is a worker thread variable that is currently set to 3, this number could be higher
-    worker thread from line 199: ThreadPoolExecutor(max_workers=3) as executor
 
 Example Output:
 The `gitlab_search_results.csv` file will contain:
@@ -83,20 +80,22 @@ def write_to_csv(filename, data, mode='w'):
 def fetch_projects(token, group_path, projects_json_file):
     page = 1
     all_projects = []
-    while True:
-        url = f"https://gitlab.com/api/v4/groups/{group_path}/projects?include_subgroups=true&per_page=100&page={page}"
-        headers = {"PRIVATE-TOKEN": token}
-        try:
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()
-        except requests.exceptions.RequestException as e:
-            logging.error(f"Failed to fetch projects: {e}")
-            raise
-        projects = response.json()
-        if not projects:
-            break
-        all_projects.extend(projects)
-        page += 1
+    with tqdm(desc="Getting List of Repos", unit="page") as pbar:
+        while True:
+            url = f"https://gitlab.com/api/v4/groups/{group_path}/projects?include_subgroups=true&per_page=100&page={page}"
+            headers = {"PRIVATE-TOKEN": token}
+            try:
+                response = requests.get(url, headers=headers)
+                response.raise_for_status()
+            except requests.exceptions.RequestException as e:
+                logging.error(f"Failed to fetch projects: {e}")
+                raise
+            projects = response.json()
+            if not projects:
+                break
+            all_projects.extend(projects)
+            page += 1
+            pbar.update(1)
     with open(projects_json_file, 'w') as file:
         json.dump(all_projects, file)
 
@@ -197,11 +196,13 @@ def main(token, group_path, search_phrase, output_file, projects_json_file, proj
 
     # Use ThreadPoolExecutor to process projects concurrently
     results = []
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    with ThreadPoolExecutor(max_workers=10) as executor:
         futures = {executor.submit(process_project, project, search_phrase, gl): project for project in projects}
-        for future in tqdm(as_completed(futures), total=len(futures), desc="Projects", unit="project"):
-            project_results = future.result()
-            results.extend(project_results)
+        with tqdm(total=len(futures), desc=f"Search Repos for '{search_phrase}'", unit="project") as pbar:
+            for future in as_completed(futures):
+                project_results = future.result()
+                results.extend(project_results)
+                pbar.update(1)
     
     write_to_csv(output_file, results, mode='a')
 
@@ -216,4 +217,3 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     main(args.token, args.group_path, args.search_phrase, args.output, args.projects_json_file, args.projects_csv_file)
-
